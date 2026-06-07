@@ -1,0 +1,30 @@
+---
+# istiod values
+#
+# Key feature: Gateway API support enabled. This is the modern replacement
+# for Istio's VirtualService/Gateway CRDs and aligns with upstream Kubernetes
+# networking direction.
+
+pilot:
+  env:
+    PILOT_ENABLE_GATEWAY_API: "true"
+    PILOT_ENABLE_GATEWAY_API_STATUS: "true"
+    PILOT_ENABLE_GATEWAY_API_DEPLOYMENT_CONTROLLER: "true"
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2048Mi
+    limits:
+      cpu: 1000m
+      memory: 4096Mi
+
+  autoscaleEnabled: true
+  autoscaleMin: 2
+  autoscaleMax: 5
+
+# Disable namespace-default sidecar injection. Use Gateway API at edge,
+# enable sidecar per-namespace via `istio-injection=enabled` label only
+# when explicitly needed.
+sidecarInjectorWebhook:
+  enableNamespacesByDefault: false

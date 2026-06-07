@@ -1,0 +1,32 @@
+{{- if .Values.routing.httpRoute.enabled -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.app.name }}
+  labels:
+    {{- include "microservice.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.routing.httpRoute.parentGateway.name }}
+      namespace: {{ .Values.routing.httpRoute.parentGateway.namespace }}
+  {{- if and .Values.hostname .Values.domain }}
+  hostnames:
+    - {{ include "microservice.fullHostname" . | quote }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.routing.httpRoute.pathPrefix }}
+      {{- if and .Values.routing.httpRoute.stripPrefix (ne .Values.routing.httpRoute.pathPrefix "/") }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      {{- end }}
+      backendRefs:
+        - name: {{ .Values.app.name }}
+          port: 80
+{{- end }}

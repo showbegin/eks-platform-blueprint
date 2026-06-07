@@ -1,0 +1,20 @@
+aws_region   = "eu-central-1"
+environment  = "dev"
+state_bucket = "<your-terraform-state-bucket>"
+
+# GitLab project whose pipelines may assume the deploy role.
+# Group or user path, no leading slash, e.g. "showbegin/eks-platform-blueprint".
+gitlab_project_path = "<group-or-user>/<project>"
+
+# gitlab_server_url = "https://gitlab.com"   # self-managed: your instance URL
+# gitlab_audience   = "https://gitlab.com"   # must match the job id_tokens aud
+# allowed_branches  = ["dev", "stage", "prod"]
+# role_name         = "platform-deploy"       # must match DEPLOY_ROLE_NAME in CI
+# eks_access_policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+tags = {
+  Project     = "eks-platform-blueprint"
+  Environment = "dev"
+  ManagedBy   = "terraform"
+  CostCenter  = "platform"
+}

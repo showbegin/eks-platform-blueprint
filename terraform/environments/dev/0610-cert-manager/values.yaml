@@ -1,0 +1,22 @@
+---
+# cert-manager Helm values
+#
+# CRDs are installed by the chart itself.
+installCRDs: true
+
+# Enable Gateway API support so cert-manager can issue certs via HTTPRoute.
+extraArgs:
+  - --feature-gates=ExperimentalGatewayAPISupport=true
+
+# Use public DNS recursors for DNS-01 challenges (avoids cluster DNS loop).
+# Reference: https://github.com/cert-manager/cert-manager/issues/1933
+# extraArgs:
+#   - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
+#   - --dns01-recursive-nameservers-only
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

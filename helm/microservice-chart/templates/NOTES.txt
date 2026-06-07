@@ -1,0 +1,29 @@
+{{ .Values.app.name }} has been deployed.
+
+Environment: {{ .Values.environment }}
+Image:       {{ .Values.image.registry }}:{{ .Values.image.tag }}
+
+{{- if .Values.routing.httpRoute.enabled }}
+
+URL (Gateway API):
+  https://{{ include "microservice.fullHostname" . }}
+
+  Verify HTTPRoute is attached:
+    kubectl get httproute {{ .Values.app.name }} -o yaml
+{{- else if .Values.routing.ingress.enabled }}
+
+URL (Ingress):
+  https://{{ include "microservice.fullHostname" . }}
+
+  Verify Ingress:
+    kubectl get ingress {{ .Values.app.name }}
+{{- else }}
+
+No external routing configured (ClusterIP only).
+{{- end }}
+
+Check pod status:
+  kubectl get pods -l app.selector={{ .Values.app.selector }}
+
+Tail logs:
+  kubectl logs -l app.selector={{ .Values.app.selector }} -f

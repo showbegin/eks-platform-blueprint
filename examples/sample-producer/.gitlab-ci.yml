@@ -1,0 +1,29 @@
+# Per-service pipeline for examples/sample-producer.
+# Triggered by the root .gitlab-ci.yml trigger-sample-producer job.
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   SAMPLE_QUEUE_URL  — SQS queue URL (output of examples/sample-services TF)
+# Plus the account/region variables documented in ci/README.md.
+
+include:
+  - local: /ci/gitlab-ci/templates/env-config.yml
+  - local: /ci/gitlab-ci/templates/base-build.yml
+  - local: /ci/gitlab-ci/templates/base-deploy.yml
+
+stages:
+  - build
+  - deploy
+
+build:
+  extends: .base_build
+  variables:
+    SERVICE_NAME: sample-producer
+    BUILD_CONTEXT: examples/sample-producer
+
+deploy:
+  extends: .base_deploy
+  variables:
+    SERVICE_NAME: sample-producer
+    HELM_VALUES: examples/sample-producer/helm-values.yaml
+    EXTRA_HELM_ARGS: "--set extraEnv.SQS_QUEUE_URL=$SAMPLE_QUEUE_URL"
+  needs: [build]

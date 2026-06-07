@@ -1,0 +1,19 @@
+# Patterns to ignore when building Helm packages.
+.DS_Store
+.git/
+.gitignore
+.svn/
+.hg/
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.tox/
+.venv/
+__pycache__/
+.helmignore
+*.tgz

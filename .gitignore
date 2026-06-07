@@ -1,0 +1,71 @@
+# --- Terraform ---
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+# Backend config files often contain account-specific bucket/table names
+backend.hcl
+backend.*.hcl
+!backend.hcl.example
+!backend.*.hcl.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# --- Helm ---
+*.tgz
+charts/
+.helmignore.bak
+
+# --- Node / JS (for any tooling) ---
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+package-lock.json.bak
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pem
+*.key
+secrets/
+**/secrets/
+.aws/
+kubeconfig
+*.kubeconfig
+
+# --- Lab artifacts (raw, pre-scrub) ---
+lab/raw/
+lab/_scratch/
+
+# --- Build outputs ---
+dist/
+build/
+bin/
+target/
+out/

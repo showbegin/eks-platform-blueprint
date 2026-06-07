@@ -1,0 +1,54 @@
+# Base build template — Docker build + push to ECR (auth via GitLab OIDC).
+#
+# Usage in per-service .gitlab-ci.yml:
+#
+#   build:
+#     extends: .base_build
+#     variables:
+#       SERVICE_NAME: api
+#       BUILD_CONTEXT: api          # optional, defaults to $SERVICE_NAME
+#       DOCKERFILE: Dockerfile      # optional, defaults to Dockerfile
+
+.base_build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  retry: 2
+  variables:
+    # dind over the internal CI network without TLS — lets the buildx
+    # docker-container driver attach without a custom docker context.
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+    # Match your EKS node architecture. The blueprint defaults to ARM64
+    # (Graviton/Bottlerocket); set linux/amd64 for x86 node groups.
+    TARGET_PLATFORM: "linux/arm64"
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: "$CI_SERVER_URL"
+  before_script:
+    - apk update && apk upgrade --no-cache
+    - apk add --no-cache aws-cli
+    - for i in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done
+    - docker buildx use xbuilder 2>/dev/null || docker buildx create --use --name xbuilder --driver docker-container
+  script:
+    - !reference [.load_env, script]
+    - !reference [.aws_auth, script]
+    - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+    - BUILD_CONTEXT="${BUILD_CONTEXT:-$SERVICE_NAME}"
+    - DOCKERFILE="${DOCKERFILE:-Dockerfile}"
+    - IMAGE_TAG="${SERVICE_NAME}-${CI_COMMIT_REF_NAME}-${CI_PIPELINE_IID}"
+    - echo "Building ${ECR_REGISTRY}:${IMAGE_TAG} for ${TARGET_PLATFORM}"
+    - docker buildx build
+        --platform "${TARGET_PLATFORM}"
+        --build-arg CI_BUILD=true
+        -f "${BUILD_CONTEXT}/${DOCKERFILE}"
+        -t "${ECR_REGISTRY}:${IMAGE_TAG}"
+        --push
+        "${BUILD_CONTEXT}"
+    - echo "IMAGE_TAG=${IMAGE_TAG}" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "dev" || $CI_COMMIT_REF_NAME == "stage" || $CI_COMMIT_REF_NAME == "prod"'

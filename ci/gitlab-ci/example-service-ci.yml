@@ -1,0 +1,30 @@
+# Per-service pipeline — services/api/.gitlab-ci.yml
+#
+# This file is included by the root .gitlab-ci.yml trigger job.
+# It extends the base templates to build and deploy this specific service.
+# A child pipeline is independent, so it must include the templates itself.
+
+include:
+  - local: /ci/gitlab-ci/templates/env-config.yml
+  - local: /ci/gitlab-ci/templates/base-build.yml
+  - local: /ci/gitlab-ci/templates/base-deploy.yml
+
+stages:
+  - build
+  - deploy
+
+build:
+  extends: .base_build
+  variables:
+    SERVICE_NAME: api
+
+deploy:
+  extends: .base_deploy
+  variables:
+    SERVICE_NAME: api
+  needs: [build]
+
+rollback:
+  extends: .base_rollback
+  variables:
+    SERVICE_NAME: api

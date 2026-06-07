@@ -1,0 +1,71 @@
+# Environment configuration — maps branch name to AWS account + domain,
+# and provides credential-less AWS auth via GitLab OIDC.
+#
+# This is the ONLY file that contains account-specific values.
+# Replace the placeholder values with your actual account IDs and domains,
+# or (preferred) set them as masked CI/CD variables in the GitLab project.
+#
+# Pattern: branch name determines target environment. `.load_env` sets the
+# environment variables; `.aws_auth` exchanges a GitLab OIDC token for
+# short-lived AWS credentials (no stored AWS keys on the runner).
+
+# -----------------------------------------------------------------------------
+# .load_env — sets environment variables only (no AWS calls).
+# -----------------------------------------------------------------------------
+.load_env:
+  script:
+    - |
+      case "$CI_COMMIT_REF_NAME" in
+        "dev")
+          export AWS_ACCOUNT_ID="${DEV_ACCOUNT_ID:-<DEV_ACCOUNT_ID>}"
+          export AWS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${DEPLOY_ROLE_NAME:-platform-deploy}"
+          export DOMAIN_NAME="${DEV_DOMAIN:-dev.example.com}"
+          export EKS_CLUSTER_NAME="${DEV_CLUSTER_NAME:-dev}"
+          ;;
+        "stage")
+          export AWS_ACCOUNT_ID="${STAGE_ACCOUNT_ID:-<STAGE_ACCOUNT_ID>}"
+          export AWS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${DEPLOY_ROLE_NAME:-platform-deploy}"
+          export DOMAIN_NAME="${STAGE_DOMAIN:-stage.example.com}"
+          export EKS_CLUSTER_NAME="${STAGE_CLUSTER_NAME:-stage}"
+          ;;
+        "prod")
+          export AWS_ACCOUNT_ID="${PROD_ACCOUNT_ID:-<PROD_ACCOUNT_ID>}"
+          export AWS_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${DEPLOY_ROLE_NAME:-platform-deploy}"
+          export DOMAIN_NAME="${PROD_DOMAIN:-example.com}"
+          export EKS_CLUSTER_NAME="${PROD_CLUSTER_NAME:-prod}"
+          ;;
+        *)
+          echo "Unknown environment: $CI_COMMIT_REF_NAME" ; exit 1
+          ;;
+      esac
+    - export AWS_REGION="${AWS_REGION:-eu-central-1}"
+    - export ECR_REGISTRY="${ECR_ACCOUNT_ID:-$AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO_NAME:-platform-services}"
+    - echo "env=${CI_COMMIT_REF_NAME} account=${AWS_ACCOUNT_ID} cluster=${EKS_CLUSTER_NAME} ecr=${ECR_REGISTRY}"
+
+# -----------------------------------------------------------------------------
+# .aws_auth — exchange the GitLab OIDC id_token for short-lived AWS creds.
+#
+# Requires the job to declare an id_token named GITLAB_OIDC_TOKEN, e.g.:
+#   id_tokens:
+#     GITLAB_OIDC_TOKEN:
+#       aud: "$CI_SERVER_URL"
+#
+# AWS prerequisite (created once per account, see ci/README.md):
+#   - IAM OIDC identity provider for $CI_SERVER_URL (audience = $CI_SERVER_URL)
+#   - IAM role (DEPLOY_ROLE_NAME) trusting that provider, condition on
+#     project_path / ref so only this project's pipelines can assume it.
+# -----------------------------------------------------------------------------
+.aws_auth:
+  script:
+    - |
+      CREDS=$(aws sts assume-role-with-web-identity \
+        --role-arn "$AWS_ROLE_ARN" \
+        --role-session-name "gitlab-${CI_PROJECT_PATH_SLUG}-${CI_PIPELINE_ID}" \
+        --web-identity-token "$GITLAB_OIDC_TOKEN" \
+        --duration-seconds 3600 \
+        --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+        --output text)
+      export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | awk '{print $1}')
+      export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | awk '{print $2}')
+      export AWS_SESSION_TOKEN=$(echo "$CREDS" | awk '{print $3}')
+    - aws sts get-caller-identity

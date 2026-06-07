@@ -1,0 +1,10 @@
+# Copy this file to terraform.tfvars and adjust values.
+# terraform.tfvars is gitignored — never commit real values.
+
+project_name = "platform"
+aws_region   = "eu-central-1"
+
+tags = {
+  ops_env     = "management"
+  ops_owners  = "platform-team"
+}
