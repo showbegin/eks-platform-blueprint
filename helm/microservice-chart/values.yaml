@@ -1,0 +1,201 @@
+# microservice-chart — default values
+#
+# Override these per environment via:
+#   helm upgrade --install <release> ./microservice-chart \
+#     -f values-<env>.yaml \
+#     --set image.tag=<sha>
+
+# =============================================================================
+# Required
+# =============================================================================
+
+# Environment name — used in labels, hostnames, and IRSA role names.
+# Examples: dev, stage, prod
+environment: ""
+
+# AWS account ID where IRSA roles live.
+# Required when serviceAccount.irsa.enabled = true.
+awsAccountId: ""
+
+# Public hostname components — combined as ${hostname}.${domain}
+hostname: ""
+domain: ""
+
+# =============================================================================
+# Application identity
+# =============================================================================
+
+app:
+  # Logical name of the service (lowercase, dash-separated)
+  name: "sample-service"
+
+  # Pod selector label value. Usually equals `name`, but separated to allow
+  # multiple deployments to share routing or to migrate selectors gradually.
+  selector: "sample-service"
+
+  # Full label value applied to pods (`app: <fullname>`). Often equals `name`.
+  fullname: "sample-service"
+
+  # Container port the application listens on
+  port: 8080
+
+# =============================================================================
+# Container image
+# =============================================================================
+
+image:
+  # Full registry path WITHOUT tag (e.g., 123456789012.dkr.ecr.eu-central-1.amazonaws.com/sample-service)
+  registry: ""
+
+  # Image tag — typically the commit SHA, set at deploy time
+  tag: "latest"
+
+  # imagePullPolicy: IfNotPresent | Always | Never
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Replicas, resources, scheduling
+# =============================================================================
+
+replicaCount: 1
+
+# =============================================================================
+# Horizontal Pod Autoscaler (optional)
+#
+# When enabled, an HPA resource is created targeting this deployment.
+# The static replicaCount becomes the initial value; HPA controls thereafter.
+# Requires metrics-server installed in the cluster (default in EKS).
+# =============================================================================
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  # Target CPU utilization across all pods (percent of requests)
+  targetCPUUtilizationPercentage: 70
+  # Optional: also scale on memory (percent of requests)
+  # targetMemoryUtilizationPercentage: 80
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Pod-level extras
+hostAliases: []
+# - ip: "10.0.1.5"
+#   hostnames:
+#     - "internal-svc.example.com"
+
+# Per-environment hostAliases (used when top-level hostAliases is unset)
+hostAliasesByEnv: {}
+# dev:
+#   - ip: "10.0.1.5"
+#     hostnames: ["dev-internal.example.com"]
+
+# Extra environment variables passed to the container
+extraEnv: []
+# - name: LOG_LEVEL
+#   value: INFO
+# - name: FEATURE_FLAG_X
+#   value: "true"
+
+# =============================================================================
+# Health probes — disable by default; configure for stateful services
+# =============================================================================
+
+probes:
+  readiness:
+    enabled: false
+    path: "/healthz"
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  liveness:
+    enabled: false
+    path: "/healthz"
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startup:
+    enabled: false
+    path: "/healthz"
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+
+# =============================================================================
+# Service account + IRSA
+# =============================================================================
+
+serviceAccount:
+  # Set to false if you provide your own service account
+  create: true
+
+  # Free-form annotations (merged with IRSA annotation when enabled)
+  annotations: {}
+
+  irsa:
+    # When enabled, sets `eks.amazonaws.com/role-arn` annotation on the SA.
+    # Role ARN is constructed as:
+    #   arn:aws:iam::${awsAccountId}:role/${environment}-${irsa.roleSuffix}
+    enabled: false
+    roleSuffix: ""
+
+# =============================================================================
+# Routing
+#
+# Gateway API HTTPRoute is the modern, recommended path. Ingress is kept for
+# backward compatibility with ingress-nginx and migration scenarios.
+#
+# Set ONE of routing.httpRoute.enabled or routing.ingress.enabled to true.
+# =============================================================================
+
+routing:
+  httpRoute:
+    enabled: true
+    # Reference to the Gateway provisioned by the platform's istio-gateway module
+    parentGateway:
+      name: "platform-gateway"
+      namespace: "istio-ingress"
+    # Optional path prefix (default: /)
+    pathPrefix: "/"
+    # When true (and pathPrefix is not "/"), strip the prefix before forwarding
+    # so backends can serve unprefixed routes (e.g. /producer/messages -> /messages).
+    stripPrefix: true
+
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt
+    proxyBufferSize: "16k"
+    proxyBuffersNumber: "4"
+    proxyBodySize: "10m"
+
+# =============================================================================
+# Secrets — Vault CSI provider (optional)
+# =============================================================================
+
+vault:
+  enabled: false
+  # Vault role name (must be configured in Vault to allow this service account)
+  role: ""
+  # Vault address (override if Vault runs outside the cluster)
+  address: "http://vault.vault.svc.cluster.local:8200"
+  # Mount path of the secret in Vault KV store. Default: secret/data/${app.name}/${environment}
+  secretPath: ""
+
+# =============================================================================
+# Observability
+# =============================================================================
+
+metrics:
+  enabled: false
+  path: "/metrics"
+  interval: "30s"

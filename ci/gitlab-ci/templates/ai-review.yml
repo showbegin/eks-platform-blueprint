@@ -1,0 +1,34 @@
+# AI merge-request review — Bedrock-backed, advisory (soft gate).
+#
+# Runs on merge_request_event pipelines only. Authenticates to AWS with the
+# SAME GitLab-OIDC mechanism as the deploy jobs, but assumes a separate role
+# scoped to ONLY bedrock:InvokeModel (no ECR/EKS/deploy permissions).
+#
+# Required CI/CD variables:
+#   DEV_ACCOUNT_ID         - account hosting the Bedrock-review role
+#   AI_REVIEW_GITLAB_TOKEN - token (api scope) used to post the MR note (masked)
+# Optional (have sane defaults):
+#   AI_REVIEW_ROLE_NAME (platform-ai-review), AWS_REGION (eu-central-1),
+#   BEDROCK_MODEL_ID, AI_REVIEW_BLOCK_ON_HIGH
+#
+# The role ARN can be given directly as AI_REVIEW_ROLE_ARN, otherwise it is
+# derived from DEV_ACCOUNT_ID + AI_REVIEW_ROLE_NAME.
+
+ai-mr-review:
+  stage: review
+  image: python:3.12-slim
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: "$CI_SERVER_URL"
+  variables:
+    AWS_REGION: "eu-central-1"
+    BEDROCK_MODEL_ID: "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+    AI_REVIEW_BLOCK_ON_HIGH: "false"
+  before_script:
+    - pip install --no-cache-dir --quiet boto3
+  script:
+    - export AWS_ROLE_ARN="${AI_REVIEW_ROLE_ARN:-arn:aws:iam::${DEV_ACCOUNT_ID}:role/${AI_REVIEW_ROLE_NAME:-platform-ai-review}}"
+    - python ci/ai-review/review.py
+  allow_failure: true

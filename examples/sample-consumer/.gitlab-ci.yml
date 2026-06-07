@@ -1,0 +1,30 @@
+# Per-service pipeline for examples/sample-consumer.
+# Triggered by the root .gitlab-ci.yml trigger-sample-consumer job.
+#
+# Required CI/CD variables (Settings → CI/CD → Variables):
+#   SAMPLE_QUEUE_URL  — SQS queue URL (output of examples/sample-services TF)
+#   SAMPLE_BUCKET     — S3 bucket name (output of examples/sample-services TF)
+# Plus the account/region variables documented in ci/README.md.
+
+include:
+  - local: /ci/gitlab-ci/templates/env-config.yml
+  - local: /ci/gitlab-ci/templates/base-build.yml
+  - local: /ci/gitlab-ci/templates/base-deploy.yml
+
+stages:
+  - build
+  - deploy
+
+build:
+  extends: .base_build
+  variables:
+    SERVICE_NAME: sample-consumer
+    BUILD_CONTEXT: examples/sample-consumer
+
+deploy:
+  extends: .base_deploy
+  variables:
+    SERVICE_NAME: sample-consumer
+    HELM_VALUES: examples/sample-consumer/helm-values.yaml
+    EXTRA_HELM_ARGS: "--set extraEnv.SQS_QUEUE_URL=$SAMPLE_QUEUE_URL --set extraEnv.S3_BUCKET=$SAMPLE_BUCKET"
+  needs: [build]

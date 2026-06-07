@@ -1,0 +1,40 @@
+{{- /*
+Legacy Ingress (nginx-style). Kept for migration scenarios where a service
+is still on ingress-nginx while others have moved to Gateway API.
+
+Prefer routing.httpRoute.enabled=true for new services.
+*/ -}}
+{{- if .Values.routing.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.app.name }}
+  labels:
+    {{- include "microservice.labels" . | nindent 4 }}
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: {{ include "microservice.fullHostname" . | quote }}
+    nginx.ingress.kubernetes.io/proxy-buffer-size: {{ .Values.routing.ingress.proxyBufferSize | quote }}
+    nginx.ingress.kubernetes.io/proxy-buffers-number: {{ .Values.routing.ingress.proxyBuffersNumber | quote }}
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.routing.ingress.proxyBodySize | quote }}
+    nginx.ingress.kubernetes.io/enable-websocket: "true"
+    {{- with .Values.routing.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.routing.ingress.className }}
+  tls:
+    - hosts:
+        - {{ include "microservice.fullHostname" . | quote }}
+      secretName: "tls-{{ .Values.app.name }}"
+  rules:
+    - host: {{ include "microservice.fullHostname" . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.app.name }}
+                port:
+                  number: 80
+{{- end }}

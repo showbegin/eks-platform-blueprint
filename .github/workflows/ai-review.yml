@@ -1,0 +1,39 @@
+name: AI PR Review
+
+# Advisory, Bedrock-backed review posted as a PR comment. Mirror of the GitLab
+# ci/gitlab-ci/templates/ai-review.yml job, sharing ci/ai-review/review.py.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Least privilege: OIDC for AWS + permission to comment on the PR.
+permissions:
+  id-token: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    # Same-repo PRs only. Fork PRs can't assume the OIDC role (trust is scoped to
+    # this repo) and don't receive a writable token — skip them to avoid noise/abuse.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet boto3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AI_REVIEW_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-central-1' }}
+      - name: AI review
+        continue-on-error: true # advisory soft gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEDROCK_MODEL_ID: ${{ vars.BEDROCK_MODEL_ID || 'eu.anthropic.claude-haiku-4-5-20251001-v1:0' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
+          AI_REVIEW_BLOCK_ON_HIGH: ${{ vars.AI_REVIEW_BLOCK_ON_HIGH || 'false' }}
+        run: python ci/ai-review/review.py

@@ -1,0 +1,63 @@
+---
+# kube-prometheus-stack values
+#
+# This is a minimal reference configuration. For production, customize:
+#   - Alerting rules and routing (alertmanagerSpec.config)
+#   - Grafana dashboards (grafana.dashboards or sidecar provider)
+#   - External label set for federation/cross-cluster scenarios
+#   - Persistent storage class to match cluster's default
+
+prometheus:
+  prometheusSpec:
+    retention: ${retention}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: ${storage_size}
+
+    # Discover ServiceMonitor / PodMonitor across all namespaces
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 4Gi
+
+grafana:
+  adminPassword: "${grafana_admin_password}"
+
+  persistence:
+    enabled: true
+    size: 5Gi
+
+  # Default datasources include Prometheus (auto-configured by chart)
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+# Disable defaultRules.alertManager when Alertmanager is not used
+defaultRules:
+  create: true
+
+prometheus-node-exporter:
+  hostRootFsMount:
+    enabled: true

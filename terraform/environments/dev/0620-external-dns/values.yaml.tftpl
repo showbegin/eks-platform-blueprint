@@ -1,0 +1,34 @@
+---
+# external-dns Helm values
+provider:
+  name: aws
+
+policy: sync
+registry: txt
+txtOwnerId: ${txt_owner_id}
+
+domainFilters:
+  - ${domain_filter}
+
+zoneIdFilters:
+  - ${zone_id}
+
+# Watch Service, Ingress, and Gateway API resources
+sources:
+  - service
+  - ingress
+  - gateway-httproute
+  - gateway-grpcroute
+
+serviceAccount:
+  create: true
+  name: external-dns
+  annotations:
+    eks.amazonaws.com/role-arn: ${irsa_role_arn}
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

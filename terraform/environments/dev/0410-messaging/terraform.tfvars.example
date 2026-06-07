@@ -1,0 +1,38 @@
+aws_region   = "eu-central-1"
+environment  = "dev"
+state_bucket = "<your-state-bucket-name>"
+
+# assume_role_arn = "arn:aws:iam::123456789012:role/terraform-deploy"
+
+# SQS queues — each gets a paired DLQ.
+# Set service_account when the queue is consumed by a single workload that
+# should get a default IRSA role (producer + consumer permissions combined).
+# For services with separate producer/consumer roles, omit service_account
+# here and create scoped roles in your service-specific Terraform (see
+# examples/sample-services/terraform/).
+queues = {
+  # Used by the producer + consumer demo (examples/).
+  # No service_account here — the demo defines two separate IRSA roles.
+  sample-events = {
+    visibility_timeout_seconds = 60
+    message_retention_seconds  = 345600 # 4 days
+    max_receive_count          = 5
+  }
+
+  # Example of a single-workload queue with built-in IRSA
+  # background-jobs = {
+  #   visibility_timeout_seconds = 300
+  #   service_account = {
+  #     namespace = "background-jobs"
+  #     name      = "worker"
+  #   }
+  # }
+}
+
+# Optional — email address to receive DLQ alarm notifications via SNS.
+# alert_email = "ops@example.com"
+
+tags = {
+  Environment = "dev"
+  CostCenter  = "platform-engineering"
+}

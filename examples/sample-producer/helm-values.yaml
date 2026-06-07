@@ -1,0 +1,66 @@
+# sample-producer Helm values — use with helm/microservice-chart
+#
+# Deploy:
+#   helm upgrade --install sample-producer ../../helm/microservice-chart \
+#     -f helm-values.yaml \
+#     --set image.tag=<sha> \
+#     --set environment=dev \
+#     --set serviceAccount.roleArn=<producer-irsa-role-arn> \
+#     --set extraEnv.SQS_QUEUE_URL=<queue-url>
+
+app:
+  name: sample-producer
+  selector: sample-producer
+  fullname: sample-producer
+  port: 8080
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+probes:
+  readiness:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+# IRSA — role ARN passed via --set or values override at deploy time
+serviceAccount:
+  create: true
+  name: sample-producer
+  # roleArn: arn:aws:iam::<account>:role/<env>-sample-producer
+
+# Pass SQS_QUEUE_URL via extraEnv at deploy time:
+#   --set extraEnv.SQS_QUEUE_URL=https://sqs.<region>.amazonaws.com/<account>/<queue>
+extraEnv: {}
+
+metrics:
+  enabled: true
+  path: /metrics
+  interval: "15s"
+
+routing:
+  httpRoute:
+    enabled: true
+    parentGateway:
+      name: platform-gateway
+      namespace: istio-ingress
+    pathPrefix: /producer
+
+vault:
+  enabled: false

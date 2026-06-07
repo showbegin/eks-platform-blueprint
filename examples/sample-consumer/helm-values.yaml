@@ -1,0 +1,62 @@
+# sample-consumer Helm values — use with helm/microservice-chart
+#
+# Deploy:
+#   helm upgrade --install sample-consumer ../../helm/microservice-chart \
+#     -f helm-values.yaml \
+#     --set image.tag=<sha> \
+#     --set environment=dev \
+#     --set serviceAccount.roleArn=<consumer-irsa-role-arn> \
+#     --set extraEnv.SQS_QUEUE_URL=<queue-url> \
+#     --set extraEnv.S3_BUCKET=<bucket-name>
+
+app:
+  name: sample-consumer
+  selector: sample-consumer
+  fullname: sample-consumer
+  port: 8080
+
+replicaCount: 1  # SQS handles distribution; one replica is enough for demo
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+probes:
+  readiness:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+# IRSA — role with SQS Receive/Delete + S3 PutObject
+serviceAccount:
+  create: true
+  name: sample-consumer
+  # roleArn: arn:aws:iam::<account>:role/<env>-sample-consumer
+
+extraEnv: {}
+
+metrics:
+  enabled: true
+  path: /metrics
+  interval: "15s"
+
+# Consumer is internal — no HTTPRoute. Only the producer is externally exposed.
+routing:
+  httpRoute:
+    enabled: false
+
+vault:
+  enabled: false

@@ -1,0 +1,12 @@
+aws_region   = "eu-central-1"
+environment  = "dev"
+state_bucket = "<your-state-bucket-name>"
+
+# Optional: cross-account role for production deployments.
+# Leave null for single-account.
+# assume_role_arn = "arn:aws:iam::123456789012:role/terraform-deploy"
+
+tags = {
+  Environment = "dev"
+  CostCenter  = "platform-engineering"
+}

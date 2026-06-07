@@ -1,0 +1,42 @@
+aws_region   = "eu-central-1"
+environment  = "dev"
+state_bucket = "<your-state-bucket-name>"
+project_name = "platform"
+
+# assume_role_arn = "arn:aws:iam::123456789012:role/terraform-deploy"
+
+# Buckets to create. Keys are appended to the project_name + environment
+# to form bucket names: {project_name}-{environment}-{key}
+#
+# Note: the producer + consumer demo creates its own bucket in
+# examples/sample-services/terraform/ — not here. This module is for
+# generic application buckets.
+buckets = {
+  documents = {
+    purpose            = "Application document storage (versioned, encrypted)"
+    versioning_enabled = true
+    lifecycle_rules = [
+      {
+        id                                 = "expire-old-versions"
+        noncurrent_version_expiration_days = 90
+      }
+    ]
+  }
+
+  logs = {
+    purpose            = "Application logs (transition to Glacier after 30 days)"
+    versioning_enabled = false
+    lifecycle_rules = [
+      {
+        id                         = "archive-old-logs"
+        transition_to_glacier_days = 30
+        expiration_days            = 365
+      }
+    ]
+  }
+}
+
+tags = {
+  Environment = "dev"
+  CostCenter  = "platform-engineering"
+}

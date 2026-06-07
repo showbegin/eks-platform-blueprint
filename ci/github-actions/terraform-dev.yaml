@@ -1,0 +1,164 @@
+# Terraform CI/CD Pipeline — GitHub Actions
+#
+# Pattern: one workflow per environment. On PR → plan + comment. On merge → apply.
+# Uses OIDC for AWS authentication (no long-lived credentials).
+#
+# Matrix strategy: auto-detects which Terraform modules changed in the push/PR
+# and runs plan/apply only for those directories.
+#
+# Setup required:
+#   1. Create IAM OIDC identity provider for GitHub Actions in your AWS account
+#   2. Create IAM role with trust policy for your repo
+#   3. Set the role ARN below (or use a repo variable)
+#
+# Docs: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+
+name: "Terraform — dev"
+
+on:
+  push:
+    paths:
+      - 'terraform/environments/dev/**'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'terraform/environments/dev/**'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+# Prevent parallel applies on the same environment.
+# Safety: serialize, never cancel in-progress runs (avoids interrupted applies).
+concurrency:
+  group: terraform-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  # Replace with your OIDC role ARN:
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN_DEV || 'arn:aws:iam::<ACCOUNT_ID>:role/github-actions-terraform' }}
+  TF_ENV: dev
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed Terraform modules
+        id: set-matrix
+        run: |
+          DIRS=$(git diff --name-only HEAD^ HEAD -- terraform/environments/$TF_ENV \
+            | xargs -I{} dirname {} \
+            | sort -u \
+            | grep -v '\.terraform' \
+            | jq -R -s -c 'split("\n") | map(select(length > 0)) | map({dir: .})')
+          echo "matrix={\"include\":$DIRS}" >> $GITHUB_OUTPUT
+
+  terraform:
+    name: "${{ matrix.dir }}"
+    needs: [detect-changes]
+    if: ${{ needs.detect-changes.outputs.matrix != '{"include":[]}' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt
+        id: fmt
+        working-directory: ${{ matrix.dir }}
+        run: terraform fmt -check
+
+      - name: Terraform init
+        id: init
+        working-directory: ${{ matrix.dir }}
+        run: terraform init
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: tflint
+        id: tflint
+        working-directory: ${{ matrix.dir }}
+        continue-on-error: true
+        run: |
+          tflint --init
+          tflint --no-color
+
+      - name: trivy config scan
+        id: trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
+        with:
+          scan-type: config
+          scan-ref: ${{ matrix.dir }}
+          format: table
+          exit-code: '0'  # Do not fail the build; surface findings in PR comment
+
+      - name: Terraform plan
+        id: plan
+        working-directory: ${{ matrix.dir }}
+        if: github.event_name == 'pull_request'
+        run: terraform plan -no-color -out=tfplan
+        continue-on-error: true
+
+      - name: Comment PR with plan
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: "${{ steps.plan.outputs.stdout }}"
+        with:
+          script: |
+            const output = `#### 📁 \`${{ matrix.dir }}\`
+            | Step | Status |
+            |------|--------|
+            | Format | \`${{ steps.fmt.outcome }}\` |
+            | Init | \`${{ steps.init.outcome }}\` |
+            | Plan | \`${{ steps.plan.outcome }}\` |
+
+            <details><summary>Plan output</summary>
+
+            \`\`\`hcl
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Actor: @${{ github.actor }}*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Fail on plan error
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Terraform apply
+        working-directory: ${{ matrix.dir }}
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve

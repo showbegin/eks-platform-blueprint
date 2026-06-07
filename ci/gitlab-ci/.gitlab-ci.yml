@@ -1,0 +1,121 @@
+# GitLab CI — Monorepo Application Pipeline
+#
+# Pattern: SERVICE-variable dispatch. Each service has its own trigger job.
+# Pipelines run when:
+#   1. Files in the service directory change (auto-trigger)
+#   2. Manual trigger with SERVICE=<name> variable (force-deploy)
+#
+# Branch → environment mapping:
+#   dev    → dev account
+#   stage  → stage account
+#   prod   → prod account (manual gate)
+#
+# Works on GitLab.com (free tier) — no self-hosted GitLab required.
+# Runner: use GitLab.com shared runners or register your own.
+
+workflow:
+  rules:
+    # MR pipelines run the advisory AI review only (see ai-mr-review).
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    - if: '$SERVICE'
+      when: always
+    - if: '$CI_COMMIT_REF_NAME == "dev" || $CI_COMMIT_REF_NAME == "stage" || $CI_COMMIT_REF_NAME == "prod"'
+      when: always
+    - when: never
+
+stages:
+  - trigger
+  - review
+
+include:
+  - local: /ci/gitlab-ci/templates/env-config.yml
+  - local: /ci/gitlab-ci/templates/base-build.yml
+  - local: /ci/gitlab-ci/templates/base-deploy.yml
+  - local: /ci/gitlab-ci/templates/ai-review.yml
+
+# =============================================================================
+# Service triggers — add one block per service in your monorepo.
+#
+# The pattern:
+#   - Manual trigger: set SERVICE=<name> in pipeline variables
+#   - Auto trigger: push to the service's directory on a mapped branch
+#
+# To add a new service, copy any trigger block and change the name + paths.
+# =============================================================================
+
+trigger-api:
+  stage: trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$SERVICE == "api"'
+    - if: '$SERVICE'
+      when: never
+    - changes:
+        - services/api/**/*
+  trigger:
+    include: services/api/.gitlab-ci.yml
+    strategy: depend
+
+trigger-web:
+  stage: trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$SERVICE == "web"'
+    - if: '$SERVICE'
+      when: never
+    - changes:
+        - services/web/**/*
+  trigger:
+    include: services/web/.gitlab-ci.yml
+    strategy: depend
+
+trigger-worker:
+  stage: trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$SERVICE == "worker"'
+    - if: '$SERVICE'
+      when: never
+    - changes:
+        - services/worker/**/*
+  trigger:
+    include: services/worker/.gitlab-ci.yml
+    strategy: depend
+
+# =============================================================================
+# Example-app triggers — concrete, runnable instantiation of the pattern above
+# using the demo services shipped in examples/. These let any user validate the
+# build → deploy pipeline end-to-end without first authoring a services/ tree.
+# =============================================================================
+
+trigger-sample-producer:
+  stage: trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$SERVICE == "sample-producer"'
+    - if: '$SERVICE'
+      when: never
+    - changes:
+        - examples/sample-producer/**/*
+  trigger:
+    include: examples/sample-producer/.gitlab-ci.yml
+    strategy: depend
+
+trigger-sample-consumer:
+  stage: trigger
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$SERVICE == "sample-consumer"'
+    - if: '$SERVICE'
+      when: never
+    - changes:
+        - examples/sample-consumer/**/*
+  trigger:
+    include: examples/sample-consumer/.gitlab-ci.yml
+    strategy: depend

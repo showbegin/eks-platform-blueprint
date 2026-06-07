@@ -1,0 +1,81 @@
+# Base deploy template — OIDC auth + helm upgrade to the target EKS cluster.
+#
+# Usage in per-service .gitlab-ci.yml:
+#
+#   deploy:
+#     extends: .base_deploy
+#     variables:
+#       SERVICE_NAME: api
+#       HELM_VALUES: services/api/helm-values.yaml   # optional default shown
+#       EXTRA_HELM_ARGS: "--set extraEnv.FOO=$FOO"    # optional per-service env
+#     needs: [build]
+#
+# IRSA: the chart computes the role ARN as
+#   arn:aws:iam::${awsAccountId}:role/${environment}-${SERVICE_NAME}
+# so the IAM role created for the service must be named <env>-<service>
+# (e.g. dev-sample-producer). Provision it with the platform's IRSA modules.
+
+.base_deploy:
+  stage: deploy
+  image:
+    name: alpine/k8s:1.31.4
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: "$CI_SERVER_URL"
+  variables:
+    HELM_VALUES: "services/${SERVICE_NAME}/helm-values.yaml"
+  script:
+    - !reference [.load_env, script]
+    - !reference [.aws_auth, script]
+    - echo "Configuring kubectl for ${EKS_CLUSTER_NAME}..."
+    - aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+    - echo "Deploying ${SERVICE_NAME} with tag ${IMAGE_TAG}..."
+    - helm upgrade --install "${SERVICE_NAME}" ./helm/microservice-chart
+        --namespace "${SERVICE_NAME}"
+        --create-namespace
+        -f "${HELM_VALUES}"
+        --set image.registry="${ECR_REGISTRY}"
+        --set image.tag="${IMAGE_TAG}"
+        --set environment="${CI_COMMIT_REF_NAME}"
+        --set domain="${DOMAIN_NAME}"
+        --set awsAccountId="${AWS_ACCOUNT_ID}"
+        --set serviceAccount.irsa.enabled=true
+        --set serviceAccount.irsa.roleSuffix="${SERVICE_NAME}"
+        ${EXTRA_HELM_ARGS}
+        --wait --timeout 5m
+  rules:
+    - if: '$CI_COMMIT_REF_NAME == "dev" || $CI_COMMIT_REF_NAME == "stage"'
+    - if: '$CI_COMMIT_REF_NAME == "prod"'
+      when: manual
+
+# Rollback template — redeploy a previous image tag.
+# Usage: trigger pipeline with SERVICE=<name> and ROLLBACK_TAG=<tag>
+.base_rollback:
+  stage: deploy
+  image:
+    name: alpine/k8s:1.31.4
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: "$CI_SERVER_URL"
+  variables:
+    HELM_VALUES: "services/${SERVICE_NAME}/helm-values.yaml"
+  script:
+    - !reference [.load_env, script]
+    - !reference [.aws_auth, script]
+    - aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+    - echo "Rolling back ${SERVICE_NAME} to ${ROLLBACK_TAG}..."
+    - helm upgrade --install "${SERVICE_NAME}" ./helm/microservice-chart
+        --namespace "${SERVICE_NAME}"
+        -f "${HELM_VALUES}"
+        --set image.registry="${ECR_REGISTRY}"
+        --set image.tag="${ROLLBACK_TAG}"
+        --set environment="${CI_COMMIT_REF_NAME}"
+        --set domain="${DOMAIN_NAME}"
+        --set awsAccountId="${AWS_ACCOUNT_ID}"
+        --set serviceAccount.irsa.enabled=true
+        --set serviceAccount.irsa.roleSuffix="${SERVICE_NAME}"
+        ${EXTRA_HELM_ARGS}
+        --wait --timeout 5m
+  rules:
+    - if: '$ROLLBACK_TAG'
+      when: manual

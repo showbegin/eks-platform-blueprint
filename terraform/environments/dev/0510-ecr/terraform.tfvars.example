@@ -1,0 +1,16 @@
+aws_region  = "eu-central-1"
+environment = "dev"
+
+# All services share one repo by default (CI tags as <service>-<branch>-<pipeline>).
+repository_names = ["platform-services"]
+
+# image_tag_mutability = "MUTABLE"   # use IMMUTABLE for prod
+# untagged_expiry_days = 14
+# force_delete         = true        # allows teardown of non-empty repos
+
+tags = {
+  Project     = "eks-platform-blueprint"
+  Environment = "dev"
+  ManagedBy   = "terraform"
+  CostCenter  = "platform"
+}
