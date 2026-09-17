@@ -12,6 +12,7 @@ verification, rollback.
 | Task | Status |
 |------|--------|
 | [Deploy a new microservice](#deploy-a-new-microservice) | ✅ |
+| [Migrate a service from ingress-nginx to Gateway API (dual-run)](#migrate-a-service-from-ingress-nginx-to-gateway-api-dual-run) | ✅ |
 | [Scale a node group](#scale-a-node-group) | Documented |
 | [Rotate an IRSA role](#rotate-an-irsa-role) | Documented |
 | [Debug Gateway API routing](#debug-gateway-api-routing) | Documented |
@@ -320,3 +321,68 @@ rotate through SSM.
   [Rotate database password](#rotate-database-password) procedure.
 - Deletion protection / final-snapshot settings from the module don't carry to a
   CLI-restored instance — set them before it's load-bearing.
+
+---
+
+## Migrate a service from ingress-nginx to Gateway API (dual-run)
+
+> ✅ _Validated: this exact per-service procedure was run to move live services
+> from ingress-nginx to the Istio Gateway API on production clusters, one host at
+> a time, with rollback always available. See ADR-003 → "Validated in production"._
+
+**When**: moving an existing service off ingress-nginx onto the Istio Gateway
+API without downtime, while other services stay on nginx.
+
+**Principle**: **dual-run.** The HTTPRoute is added *alongside* the live Ingress;
+both exist. The cut is a per-host DNS repoint (nginx LB → gateway LB). Rollback is
+repointing DNS back. nginx is left untouched until the whole environment is
+migrated.
+
+**Prereqs**:
+- Platform layer present on the target cluster: Istio + the `platform-gateway`
+  Gateway, and the AWS Load Balancer Controller (gateways on an NLB).
+- The gateway's NLB `:443` listener terminates TLS with the **same** cert the
+  nginx LB uses (e.g. an ACM wildcard covering the host) → no cert regression.
+- The chart's `httproute.yaml` is CRD-capability-gated, so `httpRoute.enabled=true`
+  is safe to promote even to clusters not yet migrated.
+
+**Steps**:
+1. **Baseline.** Record the service's current nginx Ingress host → backend
+   `svc:port`, and confirm `https://<host>/<healthpath>` returns its normal code.
+2. **Enable dual-run.** In the service's values, set **both**
+   `routing.httpRoute.enabled: true` and `routing.ingress.enabled: true`, then
+   `helm upgrade --install`. The HTTPRoute is created; the Ingress stays live.
+3. **Verify the gateway path BEFORE touching DNS.** Curl the gateway LB directly
+   with the real Host header (`curl --resolve <host>:443:<gateway-lb-ip> https://<host>/<healthpath>`).
+   Expect the app response, not a 404 — this proves routing without moving traffic.
+4. **Cut DNS.** Repoint the host's record from the nginx LB to the gateway LB
+   (lower the TTL first, e.g. 300→60s). Validate against a **public resolver or
+   the gateway LB directly**, not a possibly-cached local resolver.
+5. **Monitor** at least one TTL window on real traffic.
+6. **Leave the nginx Ingress in place** until the whole environment is migrated
+   (it is your rollback path — see the note below).
+
+**Verification**:
+- HTTPRoute `Accepted=True` and `ResolvedRefs=True`; Gateway `Programmed=True`.
+- `openssl s_client -connect <gateway-lb>:443` handshake returns `Verify return code: 0`.
+- The resolved target for `<host>` is the gateway LB, and the app answers end-to-end.
+- ⚠️ A cert check alone does **not** prove you hit the gateway — if TLS terminates
+  with the same ACM cert on both LBs, the issuer is identical. Check the resolved
+  target/IP.
+
+**Rollback**: repoint the host's DNS record back to the nginx LB. Because dual-run
+kept the Ingress live, this is instantaneous — no redeploy.
+
+**Behavioral parity — audit before cutting.** Routing working is not behavioral
+parity. Custom nginx annotations do **not** transfer to the HTTPRoute automatically.
+Before cutting a service, check per-service (timeouts, body size, buffer sizes,
+websocket) and controller-level nginx config, and decide each disposition. Note
+Envoy imposes no request timeout by default (looser than nginx, not tighter) — set
+an HTTPRoute `timeouts.request` for parity and a runaway ceiling if you relied on
+nginx's.
+
+**"Migrated" is not "retired".** Under a shared-values promotion model, do **not**
+follow up by setting `ingress.enabled: false` to remove nginx from a single
+environment — that value promotes to environments with no gateway and black-holes
+them. Hold the dual-config until every environment has the gateway (or make
+`ingress.enabled` per-environment). See ADR-003.
