@@ -1,4 +1,22 @@
-{{- if .Values.routing.httpRoute.enabled -}}
+{{- /*
+Gate on BOTH the flag AND the presence of the Gateway API CRD.
+
+Why the capability check matters: routing.httpRoute.enabled is typically a
+promoted value (dev -> stage -> prod share the same chart values). But the
+Gateway API CRDs only exist on clusters where the Istio platform layer has
+been installed. Without this guard, promoting httpRoute.enabled=true to a
+cluster that still runs ingress-nginx fails the deploy with:
+
+    Error: UPGRADE FAILED: no matches for kind "HTTPRoute" in version
+    "gateway.networking.k8s.io/v1" ensure CRDs are installed first
+
+.Capabilities reflects the LIVE target cluster during `helm upgrade --install`,
+so the HTTPRoute renders only where the CRD exists and is a no-op elsewhere.
+This makes httpRoute.enabled=true safe to promote everywhere during a
+dual-run migration. (For local `helm template`, pass
+--api-versions gateway.networking.k8s.io/v1 to render it.)
+*/ -}}
+{{- if and .Values.routing.httpRoute.enabled (.Capabilities.APIVersions.Has "gateway.networking.k8s.io/v1") -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

@@ -153,7 +153,13 @@ serviceAccount:
 # Gateway API HTTPRoute is the modern, recommended path. Ingress is kept for
 # backward compatibility with ingress-nginx and migration scenarios.
 #
-# Set ONE of routing.httpRoute.enabled or routing.ingress.enabled to true.
+# For a new service, enable exactly one. During a nginx -> Gateway API
+# migration you deliberately enable BOTH (dual-run): the HTTPRoute is added
+# alongside the live Ingress and only takes traffic once you cut DNS to the
+# gateway, so rollback is a single DNS change. The HTTPRoute template is
+# CRD-capability-gated (see templates/httproute.yaml), so httpRoute.enabled=true
+# is safe to promote to clusters that don't have the Gateway API installed yet.
+# See docs/decisions/ADR-003 and docs/RUNBOOKS.md (nginx -> Gateway API cutover).
 # =============================================================================
 
 routing:
